@@ -8,7 +8,10 @@
 - Immutable
 - Distributed
 
-### Genesis Block
+#### 블록체인의 종류
+<img width="486" alt="스크린샷 2022-02-16 오전 12 17 34" src="https://user-images.githubusercontent.com/17891566/154091730-1a50a128-9fd4-467a-9b7e-53a54cf79716.png">
+
+#### Genesis Block
 블록체인에서 생성된 첫 번째 블록
 ```js
 function Blockchain() {
