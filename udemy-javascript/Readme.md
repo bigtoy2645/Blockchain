@@ -111,8 +111,8 @@ Blockchain.prototype.proofOfWork = function(previousBlockHash, currentBlockData)
 ## Accessing the blockchain through an api
 
 ### 필요한 모듈 설치
-node : 서버용 JavaScript Runtime
-npm : Node JavaScript를 위한 패키지 매니저. node가 패키지를 찾을 수 있도록 모듈을 관리한다.
+- node : 서버용 JavaScript Runtime   
+- npm : Node JavaScript를 위한 패키지 매니저. node가 패키지를 찾을 수 있도록 모듈을 관리한다.
 
 ```js
 $ npm i express --save      // 웹 서비스 쉽게 구현할 수 있음
@@ -175,5 +175,15 @@ app.listen(3000, function() {
     console.log('Listening on port 3000...');
 })
 ```
-
+    
+### 서버 구동
+package.json에 api.js 파일 수정 시 서버 재구동하도록 등록
+```js
+"scripts": {
+  "start": "nodemon --watch dev -e js dev/api.js"
+},
+```    
+```
+$ node dev/api.js 
+```
 </details>
