@@ -139,18 +139,24 @@ const bitcoin = new Blockchain();
 app.use(bodyParser.json());                             // for parsing application/json
 app.use(bodyParser.urlencoded({ extended: false }));    // for parsing application/x-www-form-urlencoded
 
-/* 블록체인 정보 전달 */
+/* 블록체인 정보 전달
+   test : localhost:3000/blockchain
+ */
 app.get('/blockchain', function (req, res) {
   res.send(bitcoin)
 });
 
-/* req.body 정보로 Transaction을 생성한다. */
+/* req.body 정보로 Transaction을 생성한다.
+   test : postman
+ */
 app.post('/transaction', function(req, res) {
     const blockIndex = bitcoin.createNewTransaction(req.body.amount, req.body.sender, req.body.recipient);
     res.json({ note: `Transaction will be added in block ${blockIndex}.` });
 });
 
-/* 채굴하여 블록을 생성한다. */
+/* 채굴하여 블록을 생성한다.
+   test : localhost:3000/mine
+ */
 app.get('/mine', function(req, res) {
     const lastBlock = bitcoin.getLastBlock();
     const previousBlockHash = lastBlock['hash'];
