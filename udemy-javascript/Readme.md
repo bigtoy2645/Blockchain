@@ -3,6 +3,8 @@
 강의 : https://www.udemy.com/share/1024hC3@O0pAtPMKCcBkDQXtCmw9JgC_GpGaCA-Csc9j5Fam4NydzD4vqnaASLTya0adzwqn/   
 소스 : https://github.com/erictraub/Learn-Blockchain-By-Building-Your-Own-In-JavaScript
 
+## Chapter 1. Building a blockchain
+
 ### 블록체인의 특성
 - Ledger
 - Immutable
@@ -97,3 +99,71 @@ Blockchain.prototype.proofOfWork = function(previousBlockHash, currentBlockData)
 6. 검증이 완료된 블록은 이전 블록과 연결된다.
 7. 사본이 참여자의 컴퓨터에 각자 저장된다.
 8. A의 송금이 완료된다.
+
+## Chapter 2. Accessing the blockchain through an api
+
+### 필요한 모듈 설치
+node : 서버용 JavaScript Runtime
+npm : Node JavaScript를 위한 패키지 매니저. node가 패키지를 찾을 수 있도록 모듈을 관리한다.
+
+```js
+$ npm i express --save      // 웹 서비스 쉽게 구현할 수 있음
+$ npm i nodemon --save      // 파일이 수정되면 서버를 자동으로 Restart
+$ npm i body-parser --save  // req.body parsing
+$ npm i uuid --save         // uuid 생성
+```
+
+```js
+const express = require('express');
+const bodyParser = require('body-parser');
+const Blockchain = require('./blockchain');
+const uuid = require('uuid');
+```
+
+### api.js
+```js
+const app = express();
+
+// uuid.v1() : timestamp
+const nodeAddress = uuid.v1().split('-').join(''); // - 구분 제거
+const bitcoin = new Blockchain();
+
+app.use(bodyParser.json());                             // for parsing application/json
+app.use(bodyParser.urlencoded({ extended: false }));    // for parsing application/x-www-form-urlencoded
+
+/* 블록체인 정보 전달 */
+app.get('/blockchain', function (req, res) {
+  res.send(bitcoin)
+});
+
+/* req.body 정보로 Transaction을 생성한다. */
+app.post('/transaction', function(req, res) {
+    const blockIndex = bitcoin.createNewTransaction(req.body.amount, req.body.sender, req.body.recipient);
+    res.json({ note: `Transaction will be added in block ${blockIndex}.` });
+});
+
+/* 채굴하여 블록을 생성한다. */
+app.get('/mine', function(req, res) {
+    const lastBlock = bitcoin.getLastBlock();
+    const previousBlockHash = lastBlock['hash'];
+    const currentBlockData = {
+        transaction: bitcoin.pendingTransactions,
+        index: lastBlock['index'] + 1
+    };
+    const nonce = bitcoin.proofOfWork(previousBlockHash, currentBlockData);
+    const blockHash = bitcoin.hashBlock(previousBlockHash, currentBlockData, nonce);
+
+    bitcoin.createNewTransaction(12.5, "00", nodeAddress); // 채굴 보상
+
+    const newBlock = bitcoin.createNewBlock(nonce, previousBlockHash, blockHash);
+    res.json({
+        none: "New block mined successfully",
+        block: newBlock
+    })
+});
+
+/* 3000 포트로 요청 대기 */
+app.listen(3000, function() {
+    console.log('Listening on port 3000...');
+})
+```
