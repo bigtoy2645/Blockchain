@@ -3,8 +3,11 @@
 강의 : https://www.udemy.com/share/1024hC3@O0pAtPMKCcBkDQXtCmw9JgC_GpGaCA-Csc9j5Fam4NydzD4vqnaASLTya0adzwqn/   
 소스 : https://github.com/erictraub/Learn-Blockchain-By-Building-Your-Own-In-JavaScript
 
-## Chapter 1. Building a blockchain
+<details>
+<summary>Chapter 1. Building a blockchain</summary>
 
+## Building a blockchain
+    
 ### 블록체인의 특성
 - Ledger
 - Immutable
@@ -99,8 +102,13 @@ Blockchain.prototype.proofOfWork = function(previousBlockHash, currentBlockData)
 6. 검증이 완료된 블록은 이전 블록과 연결된다.
 7. 사본이 참여자의 컴퓨터에 각자 저장된다.
 8. A의 송금이 완료된다.
+    
+</details>
 
-## Chapter 2. Accessing the blockchain through an api
+<details>
+<summary>Chapter 2. Accessing the blockchain through an api</summary>
+
+## Accessing the blockchain through an api
 
 ### 필요한 모듈 설치
 node : 서버용 JavaScript Runtime
@@ -167,3 +175,5 @@ app.listen(3000, function() {
     console.log('Listening on port 3000...');
 })
 ```
+
+</details>
