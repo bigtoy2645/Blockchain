@@ -193,3 +193,116 @@ package.json에 api.js 파일 수정 시 서버 재구동하도록 등록
 $ node dev/api.js 
 ```
 </details>
+
+## Chapter 3. Creating a decentralized blockchain network
+
+### 필요한 모듈 설치
+- node : 서버용 JavaScript Runtime   
+- npm : Node JavaScript를 위한 패키지 매니저. node가 패키지를 찾을 수 있도록 모듈을 관리한다.
+
+```js
+$ npm i request-promise --save  // 비동기 처리를 간편하게 사용. deprecated.      
+```
+
+```js
+const rp = require('request-promise');
+```
+
+### 신규 노드가 추가되었을 때 블록체인 네트워크의 동작 방식 
+
+#### Blockchain.js
+```js
+const currentNodeUrl = process.argv[3];     // 서버 구동 시 URL 입력 받음
+
+function Blockchain() {
+    this.chain = [];
+    this.pendingTransactions = [];
+    this.currentNodeUrl = currentNodeUrl;   // 노드 URL 지정
+    this.networkNodes = [];                 // 연결된 노드 URL 저장
+
+    this.createNewBlock(100, '0', '0');     // Genesis Block
+}
+```
+
+#### networkNode.js
+```js
+/* 신규 노드를 등록하고 연결된 노드에 등록을 요청한다 */
+app.post('/register-and-broadcast-node', function(req, res) {
+    const newNodeUrl = req.body.newNodeUrl;
+    if (bitcoin.networkNodes.indexOf(newNodeUrl) == -1) bitcoin.networkNodes.push(newNodeUrl);
+
+    // 노드 등록 요청
+    const regNodesPromises = [];
+    bitcoin.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + '/register-node',
+            method: 'POST',
+            body: { newNodeUrl: newNodeUrl },
+            json: true
+        };
+        regNodesPromises.push(rp(requestOptions));
+    });
+
+    // 연결된 노드들이 등록을 마치면 신규 노드에 노드 목록 전송
+    Promise.all(regNodesPromises)
+    .then(data => {
+        const bulkRegisterOptions = {
+            uri: newNodeUrl + '/register-nodes-bulk',
+            method: 'POST',
+            body: { allNetworkNodes: [ ...bitcoin.networkNodes, bitcoin.currentNodeUrl] },
+            json: true
+        };
+
+        return rp(bulkRegisterOptions);
+    })
+    .then(data => {
+        res.json({ note: 'New node registered with network successfully.' });
+    });
+});
+
+/* 신규 노드를 등록한다. */
+app.post('/register-node', function(req, res) {
+    const newNodeUrl = req.body.newNodeUrl;
+    if (bitcoin.networkNodes.indexOf(newNodeUrl) == -1 &&
+        bitcoin.currentNodeUrl != newNodeUrl) bitcoin.networkNodes.push(newNodeUrl);
+    res.json({ note: `New node registered successfully with node ${newNodeUrl}.` });
+});
+
+
+/* 여러 노드를 등록한다. */ 
+app.post('/register-nodes-bulk', function(req, res) {
+    const allNetworkNodes = req.body.allNetworkNodes;
+    allNetworkNodes.forEach(networkNodeUrl => {
+        if (bitcoin.networkNodes.indexOf(networkNodeUrl) == -1 &&
+            bitcoin.currentNodeUrl != networkNodeUrl) bitcoin.networkNodes.push(networkNodeUrl);
+    });
+
+    res.json({ note: 'Bulk registration successful.' });
+});
+
+/* 입력받은 포트로 요청 대기 */
+app.listen(port, function() {
+    console.log(`Listening on port ${port}...`);
+})
+```
+
+### package.json
+노드를 여러 대 생성하여 테스트한다.
+```js
+$ npm run node_1
+$ npm run node_2
+$ npm run node_3
+$ npm run node_4
+$ npm run node_5
+```
+
+```js
+"scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "node_1": "nodemon --watch dev -e js dev/networkNode.js 3001 http://localhost:3001",
+    "node_2": "nodemon --watch dev -e js dev/networkNode.js 3002 http://localhost:3002",
+    "node_3": "nodemon --watch dev -e js dev/networkNode.js 3003 http://localhost:3003",
+    "node_4": "nodemon --watch dev -e js dev/networkNode.js 3004 http://localhost:3004",
+    "node_5": "nodemon --watch dev -e js dev/networkNode.js 3005 http://localhost:3005"
+  },
+```
