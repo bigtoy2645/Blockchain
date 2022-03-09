@@ -194,7 +194,10 @@ $ node dev/api.js
 ```
 </details>
 
-## Chapter 3. Creating a decentralized blockchain network
+<details>
+<summary>Chapter 3. Creating a decentralized blockchain network</summary>
+
+## Creating a decentralized blockchain network
 
 ### 필요한 모듈 설치
 - node : 서버용 JavaScript Runtime   
@@ -305,4 +308,137 @@ $ npm run node_5
     "node_4": "nodemon --watch dev -e js dev/networkNode.js 3004 http://localhost:3004",
     "node_5": "nodemon --watch dev -e js dev/networkNode.js 3005 http://localhost:3005"
   },
+```
+</details>
+
+## Chapter 4. Synchronizing the network
+
+### 연결된 노드와 Transaction 동기화
+#### blockchain.js
+```js
+/* Transaction 생성 */
+Blockchain.prototype.createNewTransaction = function(amount, sender, recipient) {
+    const newTransaction = {
+        amount: amount,
+        sender: sender,
+        recipient: recipient,
+        transactionId: uuid.v4().split('-').join('')
+    };
+
+    return newTransaction;
+}
+
+/* Transaction 추가 */
+Blockchain.prototype.addTransactionToPendingTransactions = function(transactionObj) {
+    this.pendingTransactions.push(transactionObj);
+    return this.getLastBlock()['index'] + 1;
+};
+```
+
+#### networkNode.js
+```js
+/* req.body 정보로 Transaction을 생성한다. */
+app.post('/transaction', function(req, res) {
+    const newTransaction = req.body;
+    const blockIndex = bitcoin.addTransactionToPendingTransactions(newTransaction);
+    res.json({ note: `Transaction will be added in block ${blockIndex}.` });
+});
+
+/* 연결된 노드에게 Transaction을 전달한다. */ 
+app.post('/transaction/broadcast', function(req, res) {
+    const newTransaction = bitcoin.createNewTransaction(req.body.amount, req.body.sender, req.body.recipient);
+    bitcoin.addTransactionToPendingTransactions(newTransaction);
+
+    const requestPromises = [];
+    bitcoin.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + '/transaction',
+            method: 'POST',
+            body: newTransaction,
+            json: true
+        };
+
+        requestPromises.push(rp(requestOptions));
+    });
+
+    Promise.all(requestPromises)
+    .then(data => {
+        res.json({ note: 'Transaction created and broadcast successfully.' });
+    });
+});
+```
+
+### 채굴 시 연결된 노드에게 신규 블록 생성을 알리고 동기화한다.
+#### networkNode.js
+```js
+/* 채굴하여 블록을 생성한다. */
+app.get('/mine', function(req, res) {
+    const lastBlock = bitcoin.getLastBlock();
+    const previousBlockHash = lastBlock['hash'];
+    const currentBlockData = {
+        transaction: bitcoin.pendingTransactions,
+        index: lastBlock['index'] + 1
+    };
+    const nonce = bitcoin.proofOfWork(previousBlockHash, currentBlockData);
+    const blockHash = bitcoin.hashBlock(previousBlockHash, currentBlockData, nonce);
+    const newBlock = bitcoin.createNewBlock(nonce, previousBlockHash, blockHash);
+    
+    const requestPromises = [];
+    // 연결된 노드에게 새로운 블록 생성 알림
+    bitcoin.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + "/receive-new-block",
+            method: 'POST',
+            body: { newBlock: newBlock },
+            json: true
+        };
+
+        requestPromises.push(rp(requestOptions));
+    });
+
+     // 채굴 보상
+    Promise.all(requestPromises)
+    .then(data => {
+        const requestOptions = {
+            uri: bitcoin.currentNodeUrl + '/transaction/broadcast',
+            method: 'POST',
+            body: {
+                amount: 12.5,
+                sender: "00",
+                recipient: nodeAddress
+            },
+            json: true
+        };
+
+        return rp(requestOptions);
+    })
+    .then(data => {
+        res.json({
+            none: "New block mined successfully",
+            block: newBlock
+        });
+    });
+});
+
+/* 신규 블록을 연결한다. */ 
+app.post('/receive-new-block', function(req, res) {
+    const newBlock = req.body.newBlock;
+    const lastBlock = bitcoin.getLastBlock();
+    const correctHash = lastBlock.hash === newBlock.previousBlockHash;
+    const correctIndex = lastBlock['index'] + 1 === newBlock['index'];
+
+    if (correctHash && correctIndex) {
+        bitcoin.chain.push(newBlock);
+        bitcoin.pendingTransactions = [];
+        res.json({
+            note: 'New block received and accepted.',
+            newBlock: newBlock
+        });
+    } else {
+        res.json({
+            note: 'New block rejected.',
+            newBlock: newBlock
+        })
+    }
+});
 ```
