@@ -194,7 +194,10 @@ $ node dev/api.js
 ```
 </details>
 
-## Chapter 3. Creating a decentralized blockchain network
+<details>
+<summary>Chapter 3. Creating a decentralized blockchain network</summary>
+
+## Creating a decentralized blockchain network
 
 ### 필요한 모듈 설치
 - node : 서버용 JavaScript Runtime   
@@ -306,3 +309,384 @@ $ npm run node_5
     "node_5": "nodemon --watch dev -e js dev/networkNode.js 3005 http://localhost:3005"
   },
 ```
+</details>
+
+<details>
+<summary>Chapter 4. Synchronizing the network</summary>
+
+## Synchronizing the network
+
+### 연결된 노드와 Transaction 동기화
+#### blockchain.js
+```js
+/* Transaction 생성 */
+Blockchain.prototype.createNewTransaction = function(amount, sender, recipient) {
+    const newTransaction = {
+        amount: amount,
+        sender: sender,
+        recipient: recipient,
+        transactionId: uuid.v4().split('-').join('')
+    };
+
+    return newTransaction;
+}
+
+/* Transaction 추가 */
+Blockchain.prototype.addTransactionToPendingTransactions = function(transactionObj) {
+    this.pendingTransactions.push(transactionObj);
+    return this.getLastBlock()['index'] + 1;
+};
+```
+
+#### networkNode.js
+```js
+/* req.body 정보로 Transaction을 생성한다. */
+app.post('/transaction', function(req, res) {
+    const newTransaction = req.body;
+    const blockIndex = bitcoin.addTransactionToPendingTransactions(newTransaction);
+    res.json({ note: `Transaction will be added in block ${blockIndex}.` });
+});
+
+/* 연결된 노드에게 Transaction을 전달한다. */ 
+app.post('/transaction/broadcast', function(req, res) {
+    const newTransaction = bitcoin.createNewTransaction(req.body.amount, req.body.sender, req.body.recipient);
+    bitcoin.addTransactionToPendingTransactions(newTransaction);
+
+    const requestPromises = [];
+    bitcoin.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + '/transaction',
+            method: 'POST',
+            body: newTransaction,
+            json: true
+        };
+
+        requestPromises.push(rp(requestOptions));
+    });
+
+    Promise.all(requestPromises)
+    .then(data => {
+        res.json({ note: 'Transaction created and broadcast successfully.' });
+    });
+});
+```
+
+### 채굴 시 연결된 노드에게 신규 블록 생성을 알리고 동기화한다.
+#### networkNode.js
+```js
+/* 채굴하여 블록을 생성한다. */
+app.get('/mine', function(req, res) {
+    const lastBlock = bitcoin.getLastBlock();
+    const previousBlockHash = lastBlock['hash'];
+    const currentBlockData = {
+        transaction: bitcoin.pendingTransactions,
+        index: lastBlock['index'] + 1
+    };
+    const nonce = bitcoin.proofOfWork(previousBlockHash, currentBlockData);
+    const blockHash = bitcoin.hashBlock(previousBlockHash, currentBlockData, nonce);
+    const newBlock = bitcoin.createNewBlock(nonce, previousBlockHash, blockHash);
+    
+    const requestPromises = [];
+    // 연결된 노드에게 새로운 블록 생성 알림
+    bitcoin.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + "/receive-new-block",
+            method: 'POST',
+            body: { newBlock: newBlock },
+            json: true
+        };
+
+        requestPromises.push(rp(requestOptions));
+    });
+
+     // 채굴 보상
+    Promise.all(requestPromises)
+    .then(data => {
+        const requestOptions = {
+            uri: bitcoin.currentNodeUrl + '/transaction/broadcast',
+            method: 'POST',
+            body: {
+                amount: 12.5,
+                sender: "00",
+                recipient: nodeAddress
+            },
+            json: true
+        };
+
+        return rp(requestOptions);
+    })
+    .then(data => {
+        res.json({
+            none: "New block mined successfully",
+            block: newBlock
+        });
+    });
+});
+
+/* 신규 블록을 연결한다. */ 
+app.post('/receive-new-block', function(req, res) {
+    const newBlock = req.body.newBlock;
+    const lastBlock = bitcoin.getLastBlock();
+    const correctHash = lastBlock.hash === newBlock.previousBlockHash;
+    const correctIndex = lastBlock['index'] + 1 === newBlock['index'];
+
+    if (correctHash && correctIndex) {
+        bitcoin.chain.push(newBlock);
+        bitcoin.pendingTransactions = [];
+        res.json({
+            note: 'New block received and accepted.',
+            newBlock: newBlock
+        });
+    } else {
+        res.json({
+            note: 'New block rejected.',
+            newBlock: newBlock
+        })
+    }
+});
+```
+</details>
+
+## Chapter 5. Consensus
+
+블록체인의 합의 : 부정확한 데이터를 솎아내기 위해 합의를 진행한다.   
+Longest chain rule를 따른다.   
+
+### blockchain.js
+```js
+/* 블록체인이 유효한 지 확인한다. */ 
+Blockchain.prototype.chainIsValid = function(blockchain) {
+    let validChain = true;
+
+    // 이전 블록의 해시값을 비교하여 체인이 유효한 지 확인한다.
+    for (var i = 1; i < blockchain.length; i++) {
+        const currentBlock = blockchain[i];
+        const prevBlock = blockchain[i - 1];
+        const blockHash = this.hashBlock(
+            prevBlock["hash"],
+            {
+              transactions: currentBlock["transactions"],
+              index: currentBlock["index"],
+            },
+            currentBlock["nonce"]
+          );
+        if (blockHash.substring(0, 4) !== "0000") {
+            validChain = false; 
+            console.log('Blockhash not corrected :', blockHash);
+        }
+        if (currentBlock['previousBlockHash'] !== prevBlock['hash']) {
+            validChain = false;
+            console.log('PreviousBlockHash not corrected');
+        }
+
+        console.log('previousBlockHash =>', prevBlock['hash']);
+        console.log('currentBlockHash  =>', currentBlock['hash']);
+        console.log('-');
+    }
+
+    // 최초 블록 유효성 체크
+    const genesisBlock = blockchain[0];
+    const correctNonce = genesisBlock['nonce'] === 100;
+    const correctPreviousBlockHash = genesisBlock['previousBlockHash'] === '0';
+    const correctHash = genesisBlock['hash'] === '0';
+    const correctTransactions = genesisBlock['transactions'].length === 0;
+    if (!correctNonce || !correctPreviousBlockHash || !correctHash || !correctTransactions) {
+        validChain = false;
+        console.log('genesis not corrected');
+    }
+
+    return validChain;
+}
+```
+
+### test.js
+```js
+const Blockchain = require('./blockchain');
+const bitcoin = new Blockchain();
+
+const bc1 = 
+{
+    "chain": [
+    {
+    "index": 1,
+    "timestamp": 1647438160002,
+    "transactions": [],
+    "nonce": 100,
+    "hash": "0",
+    "previousBlockHash": "0"
+    },
+    {
+    "index": 2,
+    "timestamp": 1647438165628,
+    "transactions": [],
+    "nonce": 18140,
+    "hash": "0000b9135b054d1131392c9eb9d03b0111d4b516824a03c35639e12858912100",
+    "previousBlockHash": "0"
+    },
+    {
+    "index": 3,
+    "timestamp": 1647438180981,
+    "transactions": [
+    {
+    "amount": 12.5,
+    "sender": "00",
+    "recipient": "037a948073b84387bca25f40f7f93b6d",
+    "transactionId": "f5cd7a9bb2844b83ad7f0bff11c95379"
+    },
+    {
+    "amount": "70",
+    "sender": "VVPPEEEDDIEFADFSWKFKS",
+    "recipient": "XXEEXXXBBGDDSSDFGKWQBOOO",
+    "transactionId": "5d46840d069547e094def9a40fd5a808"
+    },
+    {
+    "amount": "60",
+    "sender": "VVPPEEEDDIEFADFSWKFKS",
+    "recipient": "XXEEXXXBBGDDSSDFGKWQBOOO",
+    "transactionId": "eb263b2409a0487b80fe2b9ea6b738c2"
+    }
+    ],
+    "nonce": 24218,
+    "hash": "00006ce6bbfca012b658e1802076d8481f9f7392273da0326ddfd038eb1b2b2f",
+    "previousBlockHash": "0000b9135b054d1131392c9eb9d03b0111d4b516824a03c35639e12858912100"
+    },
+    {
+    "index": 4,
+    "timestamp": 1647438189802,
+    "transactions": [
+    {
+    "amount": 12.5,
+    "sender": "00",
+    "recipient": "037a948073b84387bca25f40f7f93b6d",
+    "transactionId": "54c6e58b23f048d898e2b7dd5a49feba"
+    },
+    {
+    "amount": "50",
+    "sender": "VVPPEEEDDIEFADFSWKFKS",
+    "recipient": "XXEEXXXBBGDDSSDFGKWQBOOO",
+    "transactionId": "2d75868400e143bb80df2ccb7ac3566b"
+    }
+    ],
+    "nonce": 66981,
+    "hash": "0000951c6e124bf436d1df3be0d7cd29c78b92a7950d0c95d4640ee501072468",
+    "previousBlockHash": "00006ce6bbfca012b658e1802076d8481f9f7392273da0326ddfd038eb1b2b2f"
+    },
+    {
+    "index": 5,
+    "timestamp": 1647438207488,
+    "transactions": [
+    {
+    "amount": 12.5,
+    "sender": "00",
+    "recipient": "037a948073b84387bca25f40f7f93b6d",
+    "transactionId": "b857198a54d544f0a8724aef3459c85b"
+    },
+    {
+    "amount": "40",
+    "sender": "VVPPEEEDDIEFADFSWKFKS",
+    "recipient": "XXEEXXXBBGDDSSDFGKWQBOOO",
+    "transactionId": "8482de56b818499caab6f930233d0b64"
+    },
+    {
+    "amount": "10",
+    "sender": "VVPPEEEDDIEFADFSWKFKS",
+    "recipient": "XXEEXXXBBGDDSSDFGKWQBOOO",
+    "transactionId": "bc9b49c884ec4c16897df2ecfeb7011e"
+    }
+    ],
+    "nonce": 14857,
+    "hash": "000053a32386a154fc574056560c75d18b6279b985917d08931d8116ad59aeb6",
+    "previousBlockHash": "0000951c6e124bf436d1df3be0d7cd29c78b92a7950d0c95d4640ee501072468"
+    },
+    {
+    "index": 6,
+    "timestamp": 1647438209319,
+    "transactions": [
+    {
+    "amount": 12.5,
+    "sender": "00",
+    "recipient": "037a948073b84387bca25f40f7f93b6d",
+    "transactionId": "cfdcab85a62c4a13b899a66f8ba5734b"
+    }
+    ],
+    "nonce": 136613,
+    "hash": "0000e18a4f9a029b86c76e43c69a18efacc59a80640efab5ff985a898040c6a8",
+    "previousBlockHash": "000053a32386a154fc574056560c75d18b6279b985917d08931d8116ad59aeb6"
+    }
+    ],
+    "pendingTransactions": [
+    {
+    "amount": 12.5,
+    "sender": "00",
+    "recipient": "037a948073b84387bca25f40f7f93b6d",
+    "transactionId": "0cc1908f4b494b0a9bcb69c5a774ce4f"
+    }
+    ],
+    "currentNodeUrl": "http://localhost:3001",
+    "networkNodes": []
+};
+
+console.log('Chain is valid: ', bitcoin.chainIsValid(bc1.chain));
+```
+
+### networkNode.js
+의문점 : 가장 긴 블록체인을 먼저 찾을 게 아니라, 유효한 블록체인 중 제일 긴 걸 동기화해야 하지 않는가? 계산 시간 문제?
+
+```js
+/* 합의 */
+app.get('/consensus', function(req, res) {
+    const requestPromises = [];
+    bitcoin.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + '/blockchain',
+            method: 'GET',
+            json: true
+        };
+
+        requestPromises.push(rp(requestOptions));
+    });
+
+    Promise.all(requestPromises)
+    .then(blockchains => {
+        const currentChainLength = bitcoin.chain.length;
+        let maxChainLength = currentChainLength;
+        let newLongestChain = null;
+        let newPendingTransactions = null;
+
+        // 가장 길이가 긴 블록체인을 찾는다.
+        blockchains.forEach(blockchain => {
+            if (blockchain.chain.length > maxChainLength) {
+                maxChainLength = blockchain.chain.length;
+                newLongestChain = blockchain.chain;
+                newPendingTransactions = blockchain.pendingTransactions;
+            };
+        });
+
+        // 유효한 경우 데이터를 동기화한다.
+        if (!newLongestChain || (newLongestChain && !bitcoin.chainIsValid(newLongestChain))) {
+            res.json({
+                note: 'Current chain has not been replaced.',
+                chain: bitcoin.chain
+            });
+        } else {
+            bitcoin.chain = newLongestChain;
+            bitcoin.pendingTransactions = newPendingTransactions;
+            res.json({
+                note: 'Current chain has been replaced.',
+                chain: bitcoin.chain
+            });
+        }
+    });
+});
+```
+
+#### 테스트
+1. 3001번 ~ 3004번 노드를 먼저 연결한다.
+2. 채굴한다. (3001번 ~ 3004번 데이터 동기화됨.)
+3. 3001번에 3005번을 등록 및 연결한다.
+4. 3005번/consensus 한다.
+5. 3001번 ~ 3005번의 데이터가 동기화 된다.
+
+### Longest chain rule의 단점
+비슷한 시간대에 채굴한 두 정직한 노드가 있을 경우, 둘 중 하나는 가장 긴 체인에 합류하지 못해 고아블록(orphan blocks)이 됨.   
+고아블록이 많을 수록 가장 긴 체인의 성장률이 저하되어 공격 당하기 쉬운 상태가 됨.
