@@ -447,7 +447,10 @@ app.post('/receive-new-block', function(req, res) {
 ```
 </details>
 
-## Chapter 5. Consensus
+<details>
+<summary>Chapter 5. Consensus</summary>
+
+## Consensus
 
 블록체인의 합의 : 부정확한 데이터를 솎아내기 위해 합의를 진행한다.   
 Longest chain rule를 따른다.   
@@ -690,3 +693,108 @@ app.get('/consensus', function(req, res) {
 ### Longest chain rule의 단점
 비슷한 시간대에 채굴한 두 정직한 노드가 있을 경우, 둘 중 하나는 가장 긴 체인에 합류하지 못해 고아블록(orphan blocks)이 됨.   
 고아블록이 많을 수록 가장 긴 체인의 성장률이 저하되어 공격 당하기 쉬운 상태가 됨.
+    
+</details>
+    
+## Chapter 6. Block Explorer
+    
+### blockchain.js
+```js
+/* 해시 값이 일치하는 블록을 찾는다. */
+Blockchain.prototype.getBlock = function(blockHash) {
+    let correctBlock = null;
+    this.chain.forEach(block => {
+        if (block.hash === blockHash) correctBlock = block;
+    });
+    return correctBlock;
+}
+
+/* 트랜잭션 ID 값이 일치하는 블록과 트랜잭션을 찾는다. */
+Blockchain.prototype.getTransaction = function(transactionId) {
+    let correctTransaction = null;
+    let correctBlock = null;
+
+    this.chain.forEach(block => {
+        block.transactions.forEach(transaction => {
+            if (transaction.transactionId === transactionId) {
+                correctTransaction = transaction;
+                correctBlock = block;
+            }
+        });
+    });
+    return {
+        transaction: correctTransaction,
+        block: correctBlock
+    };
+}
+
+/* 주소값으로 송신/수신한 트랜잭션을 찾는다. */
+Blockchain.prototype.getAddressData = function(address) {
+    const addressTransactions = [];
+    this.chain.forEach(block => {
+        block.transactions.forEach(transaction => {
+            if (transaction.sender === address || transaction.recipient === address) {
+                addressTransactions.push(transaction);
+            }
+        });
+    });
+
+    let balance = 0;
+    addressTransactions.forEach(transaction => {
+        if (transaction.recipient === address) balance += transaction.amount;
+        else if (transaction.sender === address) balance -= transaction.amount;
+    });
+
+    return {
+        addressTransactions: addressTransactions,
+        addressBalance: balance
+    };
+}
+```
+    
+### networkNode.js
+```js
+/* 해시 값으로 블록 정보를 조회한다. */
+app.get('/block/:blockHash', function(req, res) { // localhost:3001/block/WERASDFDS231SDFASDF
+    const blockHash = req.params.blockHash;
+    const correctBlock = bitcoin.getBlock(blockHash);
+    res.json({
+        block: correctBlock
+    });
+});
+
+/* 트랜잭션 ID로 트랜잭션과 블록 정보를 조회한다. */
+app.get('/transaction/:transactionId', function(req, res) {
+    const transactionId = req.params.transactionId;
+    const transactionData = bitcoin.getTransaction(transactionId);
+    res.json({
+        transaction: transactionData.transaction,
+        block: transactionData.block
+    });
+});
+
+/* 주소값으로 거래가 발생한 트랜잭션 정보를 조회한다. */
+app.get('/address/:address', function(req, res) {
+    const address = req.params.address;
+    const addressData = bitcoin.getAddressData(address);
+    res.json({
+        addressData: addressData
+    });
+});
+
+/* front-end */
+app.get('/block-explorer', function(req, res) {
+    res.sendFile('./block-explorer/index.html', { root: __dirname }); // 현재 디렉터리에서 block-explorer/index.html을 찾는다.
+});
+```
+
+#### /block/:blockHash   
+<img width="700" alt="스크린샷 2022-03-23 오후 10 38 59" src="https://user-images.githubusercontent.com/17891566/159712732-3090c9d4-3876-4ecd-abea-06c5dc7ff6a0.png">
+
+    
+#### /transaction/:transactionId   
+<img width="700" alt="스크린샷 2022-03-23 오후 10 38 01" src="https://user-images.githubusercontent.com/17891566/159712704-0ca20f10-8fed-4720-842e-612500e370d3.png">
+      
+#### /address/:address    
+<img width="700" alt="스크린샷 2022-03-23 오후 10 38 39" src="https://user-images.githubusercontent.com/17891566/159712718-65c3d3e0-7548-4bf6-be25-caaf2e6deed0.png">
+
