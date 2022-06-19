@@ -696,7 +696,10 @@ app.get('/consensus', function(req, res) {
     
 </details>
     
-## Chapter 6. Block Explorer
+<details>
+<summary>Chapter 6. Block Explorer</summary>
+    
+## Block Explorer
     
 ### blockchain.js
 ```js
@@ -798,3 +801,4 @@ app.get('/block-explorer', function(req, res) {
 #### /address/:address    
 <img width="700" alt="스크린샷 2022-03-23 오후 10 38 39" src="https://user-images.githubusercontent.com/17891566/159712718-65c3d3e0-7548-4bf6-be25-caaf2e6deed0.png">
 
+</details>
